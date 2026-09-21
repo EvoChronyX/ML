@@ -66,6 +66,11 @@ def tabular_pipeline(
                 on_bad_lines="skip",
                 low_memory=False
             )
+
+        empty_columns = df.columns[df.isna().all()].tolist()
+        if empty_columns:
+            df = df.drop(columns=empty_columns)
+            print(f"Removed entirely empty columns: {empty_columns}")
         
         print(f"The shape of the dataset: {df.shape}")
         print(df.head())
@@ -87,7 +92,8 @@ def tabular_pipeline(
         plt.title('Missing Values Heatmap')
         plt.show()
 
-        numeric_columns = df.select_dtypes(include=['number'])
+        numeric_columns = df.select_dtypes(include=['number']).copy()
+        numeric_columns = numeric_columns.loc[:, numeric_columns.notna().any()]
 
         categorical_cols = [
             col for col in df.select_dtypes(include=['category', 'str']).columns
@@ -168,16 +174,20 @@ def tabular_pipeline(
 
         print("\n")
         for col in numeric_columns.columns:
+            values = pd.to_numeric(numeric_columns[col], errors='coerce').dropna()
+            if values.empty:
+                continue
+
             plt.figure(figsize=(12, 4))
 
             # Histogram
             plt.subplot(1, 2, 1)
-            sns.histplot(df[col], kde=True)
+            sns.histplot(values, kde=True)
             plt.title(f'{col} Distribution')
 
             # Boxplot
             plt.subplot(1, 2, 2)
-            sns.boxplot(x=df[col])
+            sns.boxplot(x=values.to_numpy())
             plt.title(f'{col} Boxplot')
 
             plt.tight_layout()
