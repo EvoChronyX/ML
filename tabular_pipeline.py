@@ -44,7 +44,7 @@ def tabular_pipeline(
     # =========================================================
     # 1. TABULAR EDA
     # =========================================================
-    def perform_tabular_eda(file_path):
+    def perform_tabular_eda(file_path, target_col=None):
         print(f"\n[ROUTE] Successfully sent to Tabular EDA.")
         print("\n")
         print(f"-> Processing data file: '{os.path.basename(file_path)}'")
@@ -146,11 +146,43 @@ def tabular_pipeline(
         # Bivariate Analysis
         # ---- Correlation Matrix
         if not numeric_columns.empty:
-            correlation_matrix = numeric_columns.corr()
+            feature_numeric = numeric_columns.drop(columns=[target_col], errors='ignore')
+
+            if target_col in df.columns and not feature_numeric.empty:
+                target_values = pd.to_numeric(df[target_col], errors='coerce')
+                if target_values.isna().all():
+                    target_values = pd.Series(
+                        pd.factorize(df[target_col])[0],
+                        index=df.index,
+                        dtype='float64'
+                    )
+
+                correlation_matrix = feature_numeric.assign(
+                    **{target_col: target_values}
+                ).corr()
+                top_features = (
+                    correlation_matrix[target_col]
+                    .abs()
+                    .drop(target_col)
+                    .sort_values(ascending=False)
+                    .head(10)
+                    .index
+                )
+            else:
+                top_features = feature_numeric.columns[:10]
+
             plt.figure(figsize=(12, 10))
-            sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=1.5, linecolor='yellow')
-            plt.title('Correlation Heatmap')
+            sns.heatmap(
+                feature_numeric[top_features].corr(),
+                annot=True,
+                cmap='coolwarm',
+                fmt=".2f",
+                linewidths=1.5,
+                linecolor='yellow'
+            )
+            plt.title("Correlation Heatmap of Top 10 Numeric Features")
             plt.show()
+
 
         print('\n')
         # ---- MultiCollinearity
@@ -365,7 +397,7 @@ def tabular_pipeline(
     # =========================================================
     print("\n[PIPELINE] Starting Tabular Data Processing Pipeline...\n")
 
-    raw_df = perform_tabular_eda(file_path)
+    raw_df = perform_tabular_eda(file_path, target_col=target_col)
 
     if target_col and target_col in raw_df.columns:
         y = raw_df[target_col]
