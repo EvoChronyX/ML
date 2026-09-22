@@ -35,7 +35,9 @@ def tabular_pipeline(
     method="hybrid", 
     k=20, 
     variance_threshold=0.0, 
-    random_state=42
+    random_state=42,
+    run_vif=True,
+    run_univariate=True
 ):
     """
     Unified Tabular Data Pipeline: EDA, Preprocessing, Feature Engineering, and Feature Selection.
@@ -74,8 +76,9 @@ def tabular_pipeline(
         
         print(f"The shape of the dataset: {df.shape}")
         print(df.head())
-        print(df.tail())
-        print(df.sample(5))
+        if df.shape[1] <= 50:
+            print(df.tail())
+            print(df.sample(5, random_state=42))
 
         print("\n")
         # Quality & Cleanliness
@@ -84,13 +87,17 @@ def tabular_pipeline(
             "Percentage": df.isnull().mean() * 100
         })
 
-        print(missing.sort_values("Percentage", ascending=False))
+        if df.shape[1] <= 50:
+            print(missing.sort_values("Percentage", ascending=False))
+        else:
+            print(f"Missing values: {int(missing['Missing'].sum())}")
         print(f"Duplicate Values: {df.duplicated().sum()}")
         
-        plt.figure(figsize=(10, 6))
-        sns.heatmap(df.isnull(), cbar=False)
-        plt.title('Missing Values Heatmap')
-        plt.show()
+        if df.shape[1] <= 50:
+            plt.figure(figsize=(10, 6))
+            sns.heatmap(df.isnull(), cbar=False)
+            plt.title('Missing Values Heatmap')
+            plt.show()
 
         numeric_columns = df.select_dtypes(include=['number']).copy()
         numeric_columns = numeric_columns.loc[:, numeric_columns.notna().any()]
@@ -105,27 +112,28 @@ def tabular_pipeline(
             if df[col].nunique() > 15
         ]
 
-        print("\n")
-        # Univariate Analysis for numerical Columns
-        print("Central Tendency: ")
-        for col in df.select_dtypes(include=['number']).columns:
-            mean_val = df[col].mean()
-            median_val = df[col].median()
-            mode_val = df[col].mode()
-            mode_value = mode_val.iloc[0] if not mode_val.empty else np.nan
-            skew_val = df[col].skew()
-            kurtosis_val = df[col].kurt()
-            print(f"\nColumn: '{col}'")
-            print(f"  -> Mean:   {mean_val:.2f}")
-            print(f"  -> Median: {median_val:.2f}")
-            print(f"  -> Mode:   {mode_value}")
-            print(f"  -> skew:   {skew_val}")
-            print(f"  -> Kurtosis:   {kurtosis_val}")
-            print(df[col].describe())
+        if run_univariate and df.shape[1] <= 50:
+            print("\n")
+            # Univariate Analysis for numerical Columns
+            print("Central Tendency: ")
+            for col in df.select_dtypes(include=['number']).columns:
+                mean_val = df[col].mean()
+                median_val = df[col].median()
+                mode_val = df[col].mode()
+                mode_value = mode_val.iloc[0] if not mode_val.empty else np.nan
+                skew_val = df[col].skew()
+                kurtosis_val = df[col].kurt()
+                print(f"\nColumn: '{col}'")
+                print(f"  -> Mean:   {mean_val:.2f}")
+                print(f"  -> Median: {median_val:.2f}")
+                print(f"  -> Mode:   {mode_value}")
+                print(f"  -> skew:   {skew_val}")
+                print(f"  -> Kurtosis:   {kurtosis_val}")
+                print(df[col].describe())
 
         print("\n")
         # Univariate Analysis for Categorical Columns
-        small_cat_cols = categorical_cols[:20]
+        small_cat_cols = categorical_cols[:20] if run_univariate and df.shape[1] <= 50 else []
         for col in small_cat_cols:
             print(f"\n--- Analysis for {col} ---")
             print("Frequency Counts:")
@@ -186,26 +194,47 @@ def tabular_pipeline(
 
         print('\n')
         # ---- MultiCollinearity
-        if len(numeric_columns.columns) > 1:
+        if not run_vif:
+            print("MultiCollinearity analysis skipped for this experiment.")
+        elif len(numeric_columns.columns) > 1:
             vif_df = numeric_columns.fillna(numeric_columns.median())
             vif_df = vif_df.loc[:, vif_df.var() > 0]
 
-            if len(vif_df) > 5000:
-                vif_df = vif_df.sample(n=5000, random_state=42)
-                print("(VIF calculated using a random sample of 5,000 rows for speed calculations)")
+            if vif_df.shape[1] > 1:
+                max_vif_features = 50
+                if vif_df.shape[1] > max_vif_features:
+                    selected_vif_cols = (
+                        vif_df.var()
+                        .nlargest(max_vif_features)
+                        .index
+                    )
+                    vif_df = vif_df[selected_vif_cols]
+                    print(
+                        f"VIF calculated for the {max_vif_features} highest-variance "
+                        "numeric features for speed and stability."
+                    )
 
-            try:
-                vif_data = pd.DataFrame()
-                vif_data['features'] = vif_df.columns
-                vif_data['VIF'] = [variance_inflation_factor(vif_df.values, i) for i in range(len(vif_df.columns))]
-                print(vif_data.sort_values(by="VIF", ascending=False))
-            except Exception as e:
-                print(f"Could not calculate VIF: {e}")
+                try:
+                    # VIF equals the diagonal of the inverse feature correlation
+                    # matrix. Pseudo-inverse handles collinear features without
+                    # repeatedly fitting unstable OLS models.
+                    correlation = vif_df.corr().to_numpy()
+                    vif_values = np.diag(np.linalg.pinv(correlation))
+                    vif_data = pd.DataFrame({
+                        'features': vif_df.columns,
+                        'VIF': np.maximum(vif_values, 1.0)
+                    })
+                    print(vif_data.sort_values(by="VIF", ascending=False).head(20))
+                except (ValueError, np.linalg.LinAlgError) as error:
+                    print(f"Could not calculate MultiCollinearity: {error}")
+            else:
+                print("Not enough variable numeric fields to compute MultiCollinearity.")
         else:
             print("Not enough numeric fields to compute MultiCollinearity.")
 
         print("\n")
-        for col in numeric_columns.columns:
+        plot_columns = numeric_columns.columns if run_univariate and df.shape[1] <= 50 else []
+        for col in plot_columns:
             values = pd.to_numeric(numeric_columns[col], errors='coerce').dropna()
             if values.empty:
                 continue
@@ -339,6 +368,9 @@ def tabular_pipeline(
         variance_threshold: float = 0.0,
         random_state: int = 42
     ):
+        if k <= 0:
+            k = min(20, X.shape[1])
+
         # --- Step 1: Infer Task Type ---
         if task_type == "auto":
             if y.nunique() < 20 and y.dtype in ["int64", "object", "category"]:
