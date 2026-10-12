@@ -1,0 +1,104 @@
+---------- Controller
+
+package com.example.studentbackend.Controller;
+
+import com.example.studentbackend.Repository.StudentRepository;
+import com.example.studentbackend.model.Student;
+import org.springframework.data.annotation.*;
+import org.springframework.data.web.*;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+
+
+@RestController
+@RequestMapping("/api/students")
+@CrossOrigin(origins = "*")
+
+public class StudentController {
+
+    private final StudentRepository repository;
+
+    public StudentController(StudentRepository repository){
+        this.repository = repository;
+    }
+
+    @GetMapping
+    public List<Student> getAllStudents() {
+        return repository.findAll();
+    }
+
+    @PostMapping
+    public Student addStudent(@RequestBody Student student){
+        student.setId(null);
+        return repository.save(student);
+    }
+
+    @PutMapping("{id}")
+    public Student updateStudent(
+            @PathVariable String id,
+            @RequestBody Student newStudent
+    ) {
+        Optional<Student> result = repository.findById(id);
+
+        Student student = result.get();
+        student.setName(newStudent.getName());
+        student.setEmail(newStudent.getEmail());
+
+        return repository.save(student);
+    }
+
+    @DeleteMapping("{id}")
+    public void deleteStudent(@PathVariable String id){
+        repository.deleteById(id);
+    }
+
+}
+
+
+
+--------------- Model
+
+package com.example.studentbackend.model;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.*;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+
+@Document(collection = "studentinfo")
+public class Student {
+
+    @Id
+    private String id;
+    private String name;
+    private String email;
+
+    public Student(){
+
+    }
+
+    public String getId(){
+        return id;
+    }
+
+    public String setId(String id){
+        return this.id = id;
+    }
+
+    public String getName(){
+        return name;
+    }
+
+    public String setName(String name){
+        return this.name = name;
+    }
+
+    public String getEmail(){
+        return email;
+    }
+
+    public String setEmail(String email){
+        return this.email = email;
+    }
+}
