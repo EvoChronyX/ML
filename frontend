@@ -1,0 +1,43 @@
+<script setup>
+
+import { ref,onMounted } from 'vue'
+import axios from 'axios'
+
+const API = "http://localhost:8080/api/students"
+const list = ref([])
+const form = ref({ name: '', email: '' })
+const editId = ref(null)
+
+//CRUD
+const readAll = async () => list.value = (await axios.get(API)).data
+const create = async () => { await axios.post(API, form.value); reset() }
+const update = async () => { await axios.put(`${API}/${editId.value}`, form.value); reset() }
+const remove = async (id) => { await axios.delete(`${API}/${id}`); readAll() }
+
+//Helpers
+const loadForm = (s) => { form.value = { name: s.name, email: s.email }; editId.value = s.id || s._id}
+const reset = () => { form.value = { name: '', email: '' }; editId.value = null; readAll() }
+
+onMounted(readAll)
+</script>
+
+<template>
+
+  <div >
+  <form @submit.prevent="editId ? update() : create()">
+        <input v-model="form.name" placeholder="Name" required />
+      <input v-model="form.email" type="email" placeholder="Email" required />
+      <button type="submit">{{ editId ? 'Update' : 'Add' }}</button>
+      <button v-if="editId" type="button" @click="reset">Cancel</button>
+  </form>
+
+    <ul>
+
+        <li v-for="s in list" :key="s.id || s._id">
+        {{ s.name }} — {{ s.email }}
+        <button @click="loadForm(s)">Edit</button>
+        <button @click="remove(s.id || s._id)">Delete</button>
+      </li>
+   </ul>
+</div>
+</template>
